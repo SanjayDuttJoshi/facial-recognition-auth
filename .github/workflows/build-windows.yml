@@ -25,7 +25,22 @@ jobs:
             pip install -r requirements.txt
           )
           pip install pyinstaller
-        shell: cmd # 👈 This is MUST for Windows-style "if exist"
+        shell: cmd
+
+      - name: Verify and prepare model file
+        run: |
+          if not exist face_recognition_models\models (
+            mkdir face_recognition_models\models
+          )
+          if not exist face_recognition_models\models\shape_predictor_68_face_landmarks.dat (
+            if exist shape_predictor_68_face_landmarks.dat (
+              copy shape_predictor_68_face_landmarks.dat face_recognition_models\models\
+            ) else (
+              echo "Error: shape_predictor_68_face_landmarks.dat not found"
+              exit 1
+            )
+          )
+        shell: cmd
 
       - name: Create database if not exists
         run: |

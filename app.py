@@ -17,10 +17,26 @@ import dlib
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+    
+    # Try multiple possible locations for the model file
+    possible_paths = [
+        os.path.join(base_path, relative_path),  # Direct path
+        os.path.join(base_path, "face_recognition_models", "models", "shape_predictor_68_face_landmarks.dat"),  # Nested path
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path),  # Script directory
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_recognition_models", "models", "shape_predictor_68_face_landmarks.dat")  # Script directory nested
+    ]
+    
+    # Try each path
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+            
+    # If no path works, return the first attempted path for error reporting
+    return possible_paths[0]
 
 # Create Flask app
 flask_app = Flask(__name__)
@@ -28,20 +44,33 @@ flask_app = Flask(__name__)
 # Always resolve the model path using resource_path
 PREDICTOR_MODEL_REL = "face_recognition_models/models/shape_predictor_68_face_landmarks.dat"
 predictor_path = resource_path(PREDICTOR_MODEL_REL)
-if not os.path.exists(predictor_path):
-    # Try relative to script as fallback
-    predictor_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), PREDICTOR_MODEL_REL)
-    if not os.path.exists(predictor_path):
-        tk.Tk().withdraw()  # Hide root window
-        messagebox.showerror("Model Not Found", f"Could not find face predictor model at:\n{resource_path(PREDICTOR_MODEL_REL)}\nor\n{predictor_path}\n\nPlease ensure the model file is bundled correctly.")
-        sys.exit(1)
 
 # Load the dlib predictor ONCE, globally, for all uses
 try:
+    if not os.path.exists(predictor_path):
+        # Try to find the model in the current directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_name = "shape_predictor_68_face_landmarks.dat"
+        possible_locations = [
+            os.path.join(current_dir, model_name),
+            os.path.join(current_dir, "face_recognition_models", "models", model_name),
+            os.path.join(current_dir, "models", model_name)
+        ]
+        
+        for loc in possible_locations:
+            if os.path.exists(loc):
+                predictor_path = loc
+                break
+        else:
+            raise FileNotFoundError(f"Could not find face predictor model at any of these locations:\n" + 
+                                  "\n".join(possible_locations))
+    
     dlib_predictor = dlib.shape_predictor(predictor_path)
 except Exception as e:
     tk.Tk().withdraw()
-    messagebox.showerror("Model Load Error", f"Failed to load dlib model:\n{e}\nPath tried: {predictor_path}")
+    messagebox.showerror("Model Load Error", 
+                        f"Failed to load dlib model:\n{e}\n\n"
+                        f"Please ensure the model file 'shape_predictor_68_face_landmarks.dat' is present in the same directory as the executable.")
     sys.exit(1)
 
 @flask_app.route('/logout')
@@ -639,7 +668,8 @@ class FaceAuthSystem:
                 if hasattr(self, 'login_mode'):
                     delattr(self, 'login_mode')
             else:
-                self.status_label.config(text=f"Face not recognized. Attempt {self.login_attempts}/{self.max_login_attempts}")
+                messagebox.showerror("User Not Found", "User not found in the database. Please try again or register first.")
+                self.status_label.config(text=f"User not found in the database. Attempt {self.login_attempts}/{self.max_login_attempts}")
                 # Restart login process for another attempt
                 self.start_login()
         
