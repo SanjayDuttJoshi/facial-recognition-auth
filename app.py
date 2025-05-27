@@ -87,7 +87,8 @@ class FaceAuthSystem:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Face Recognition Authentication")
-        self.root.geometry("800x600")
+        # Make window fullscreen (Linux compatible)
+        self.root.attributes('-fullscreen', True)
         
         # Initialize database
         self.init_database()
@@ -180,41 +181,54 @@ class FaceAuthSystem:
             
     def create_widgets(self):
         """Create GUI widgets"""
+        # Welcome message
+        welcome_label = tk.Label(self.main_frame, 
+                               text="Welcome to the Bank Management System",
+                               font=("Arial", 24, "bold"))
+        welcome_label.pack(pady=40)
+        
         # Title
-        title_label = tk.Label(self.main_frame, text="Face Recognition Authentication", 
-                             font=("Arial", 16, "bold"))
+        title_label = tk.Label(self.main_frame, 
+                             text="Face Recognition Authentication", 
+                             font=("Arial", 20, "bold"))
         title_label.pack(pady=20)
         
         # Buttons frame
         button_frame = tk.Frame(self.main_frame)
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=40)
         
         # Register button
-        register_btn = tk.Button(button_frame, text="Register", 
+        register_btn = tk.Button(button_frame, 
+                               text="Register", 
                                command=self.start_registration,
-                               width=15, height=2)
-        register_btn.pack(side=tk.LEFT, padx=10)
+                               width=20, 
+                               height=3,
+                               font=("Arial", 12, "bold"))
+        register_btn.pack(side=tk.LEFT, padx=20)
         
         # Login button
-        login_btn = tk.Button(button_frame, text="Login", 
+        login_btn = tk.Button(button_frame, 
+                            text="Login", 
                             command=self.start_login,
-                            width=15, height=2)
-        login_btn.pack(side=tk.LEFT, padx=10)
+                            width=20, 
+                            height=3,
+                            font=("Arial", 12, "bold"))
+        login_btn.pack(side=tk.LEFT, padx=20)
         
         # Video frame
         self.video_frame = tk.Label(self.main_frame)
         self.video_frame.pack(pady=20)
         
         # Status label
-        self.status_label = tk.Label(self.main_frame, text="", font=("Arial", 10))
+        self.status_label = tk.Label(self.main_frame, text="", font=("Arial", 12))
         self.status_label.pack(pady=10)
         
         # Countdown label for 10-second delay
-        self.countdown_label = tk.Label(self.main_frame, text="", font=("Arial", 12), fg="blue")
+        self.countdown_label = tk.Label(self.main_frame, text="", font=("Arial", 14), fg="blue")
         self.countdown_label.pack(pady=5)
         
         # Lighting status label
-        self.lighting_label = tk.Label(self.main_frame, text="", font=("Arial", 10), fg="red")
+        self.lighting_label = tk.Label(self.main_frame, text="", font=("Arial", 12), fg="red")
         self.lighting_label.pack(pady=5)
         
     def load_known_faces(self):
@@ -256,10 +270,52 @@ class FaceAuthSystem:
             messagebox.showwarning("Warning", "Camera is already in use. Please wait.")
             return
             
-        username = simpledialog.askstring("Registration", "Enter username:")
-        if username:
-            self.register_user(username)
-            
+        # Create a custom dialog for username input
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Registration")
+        dialog.geometry("400x200")
+        
+        # Center the dialog
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Add padding
+        frame = tk.Frame(dialog, padx=20, pady=20)
+        frame.pack(expand=True, fill='both')
+        
+        # Username label
+        label = tk.Label(frame, text="Enter username:", font=("Arial", 14))
+        label.pack(pady=10)
+        
+        # Username entry
+        username_var = tk.StringVar()
+        entry = tk.Entry(frame, textvariable=username_var, font=("Arial", 14), width=20)
+        entry.pack(pady=10)
+        
+        # Submit button
+        def submit():
+            username = username_var.get().strip()
+            if username:
+                dialog.destroy()
+                self.register_user(username)
+            else:
+                messagebox.showwarning("Warning", "Please enter a username")
+        
+        submit_btn = tk.Button(frame, text="Submit", command=submit, 
+                             font=("Arial", 12), width=10, height=2)
+        submit_btn.pack(pady=10)
+        
+        # Center the dialog on screen
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+        
+        # Set focus to entry
+        entry.focus_set()
+        
     def register_user(self, username):
         """Handle user registration process"""
         self.current_username = username
