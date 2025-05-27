@@ -27,6 +27,11 @@ jobs:
           pip install pyinstaller
         shell: cmd # 👈 This is MUST for Windows-style "if exist"
 
+      - name: Create database if not exists
+        run: |
+          python -c "import sqlite3; conn = sqlite3.connect('face_auth.db'); conn.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, face_encoding BLOB NOT NULL)'); conn.close()"
+        shell: cmd
+
       - name: Build executable with PyInstaller
         run: pyinstaller app.spec
 

@@ -1,21 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 
-# Get the absolute path to the templates and static directories
-project_dir = os.path.abspath('.')
-templates_path = os.path.join(project_dir, 'templates')
-static_path = os.path.join(project_dir, 'static')
-
 block_cipher = None
+
+# Ensure database exists
+if not os.path.exists('face_auth.db'):
+    import sqlite3
+    conn = sqlite3.connect('face_auth.db')
+    conn.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, face_encoding BLOB NOT NULL)')
+    conn.close()
 
 a = Analysis(
     ['app.py'],
-    pathex=[project_dir],
+    pathex=[os.path.abspath('.')],
     binaries=[],
     datas=[
         ('face_recognition_models/models/shape_predictor_68_face_landmarks.dat', 'face_recognition_models/models'),
-        ('templates', 'templates'),
-        ('static', 'static'),
         ('face_auth.db', '.'),
     ],
     hiddenimports=[],
@@ -49,5 +49,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='static/favicon.ico' if os.path.exists('static/favicon.ico') else None,
 ) 
