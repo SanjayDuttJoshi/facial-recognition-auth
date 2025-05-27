@@ -8,6 +8,7 @@ import face_recognition
 from PIL import Image, ImageTk
 import threading
 import time
+import webbrowser
 
 class DashboardWindow:
     def __init__(self, parent, username):
@@ -22,6 +23,9 @@ class DashboardWindow:
         # Create dashboard content
         self.create_widgets(username)
         
+        # Auto redirect after 3 seconds
+        self.redirect_timer = self.window.after(3000, self.redirect_to_localhost)
+        
     def create_widgets(self, username):
         # Welcome message
         welcome_label = tk.Label(
@@ -34,23 +38,50 @@ class DashboardWindow:
         # Status message
         status_label = tk.Label(
             self.window,
-            text="You have successfully logged in.",
-            font=("Arial", 10)
+            text="Login Successful!\nRedirecting to localhost:3000...",
+            font=("Arial", 12),
+            fg="green"
         )
-        status_label.pack(pady=10)
+        status_label.pack(pady=20)
         
-        # Logout button
-        logout_btn = tk.Button(
+        # Countdown label
+        self.countdown_label = tk.Label(
             self.window,
-            text="Logout",
-            command=self.logout,
-            width=15,
-            height=2
+            text="Redirecting in 3 seconds...",
+            font=("Arial", 10),
+            fg="blue"
         )
-        logout_btn.pack(pady=20)
+        self.countdown_label.pack(pady=10)
         
-    def logout(self):
-        self.window.destroy()
+        # Start countdown
+        self.countdown = 3
+        self.update_countdown()
+        
+        # Manual redirect button (commented out as requested)
+        # redirect_btn = tk.Button(
+        #     self.window,
+        #     text="Go to localhost:3000",
+        #     command=self.redirect_to_localhost,
+        #     width=20,
+        #     height=2
+        # )
+        # redirect_btn.pack(pady=20)
+        
+    def update_countdown(self):
+        if self.countdown > 0:
+            self.countdown_label.config(text=f"Redirecting in {self.countdown} seconds...")
+            self.countdown -= 1
+            self.window.after(1000, self.update_countdown)
+        
+    def redirect_to_localhost(self):
+        try:
+            # Open localhost:3000 in default browser
+            webbrowser.open('http://localhost:3000')
+            messagebox.showinfo("Redirect", "Opening localhost:3000 in your browser...")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open browser: {str(e)}")
+        finally:
+            self.window.destroy()
 
 class FaceAuthSystem:
     def __init__(self):
@@ -64,6 +95,14 @@ class FaceAuthSystem:
         # Initialize camera
         self.camera = None
         self.is_camera_active = False
+        
+        # Enhanced camera performance settings
+        self.camera_fps = 60  # Increased target FPS for smoother video
+        self.frame_interval = int(1000 / self.camera_fps)  # Interval between frames in ms
+        self.last_frame_time = 0
+        self.frame_skip = 1  # Process every frame for smoother experience
+        self.frame_count = 0
+        self.target_resolution = (800, 600)  # Higher resolution for better quality
         
         # Create main frame
         self.main_frame = tk.Frame(self.root)
@@ -89,6 +128,11 @@ class FaceAuthSystem:
         self.login_attempts = 0
         self.max_login_attempts = 3
         self.recognition_threshold = 0.4  # Lower threshold for stricter matching
+        
+        # Timing parameters for 10-second delay
+        self.camera_start_time = None
+        self.recognition_delay = 4 # 4 seconds delay before recognition starts
+        self.countdown_active = False
         
         # Lighting parameters
         self.low_light_threshold = 40  # Adjust this value based on testing
@@ -165,6 +209,10 @@ class FaceAuthSystem:
         self.status_label = tk.Label(self.main_frame, text="", font=("Arial", 10))
         self.status_label.pack(pady=10)
         
+        # Countdown label for 10-second delay
+        self.countdown_label = tk.Label(self.main_frame, text="", font=("Arial", 12), fg="blue")
+        self.countdown_label.pack(pady=5)
+        
         # Lighting status label
         self.lighting_label = tk.Label(self.main_frame, text="", font=("Arial", 10), fg="red")
         self.lighting_label.pack(pady=5)
@@ -178,6 +226,29 @@ class FaceAuthSystem:
                 self.known_face_encodings.append(np.frombuffer(face_encoding))
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Failed to load known faces: {str(e)}")
+    
+    def check_face_already_registered(self, new_face_encoding):
+        """Check if the face is already registered in the database"""
+        if not self.known_face_encodings:
+            return False, ""
+    
+        # Compare with all existing face encodings
+        face_distances = face_recognition.face_distance(
+            self.known_face_encodings,
+        new_face_encoding
+    )
+        # Find the closest match
+        min_distance = np.min(face_distances)
+        closest_match_index = np.argmin(face_distances)
+        
+        # If the face is too similar to an existing one
+        duplicate_threshold = 0.5  # Adjust this value as needed
+        
+        if min_distance < duplicate_threshold:
+            existing_username = self.known_face_names[closest_match_index]
+            return True, existing_username
+        
+        return False, ""
             
     def start_registration(self):
         """Start the registration process"""
@@ -187,9 +258,6 @@ class FaceAuthSystem:
             
         username = simpledialog.askstring("Registration", "Enter username:")
         if username:
-            if self.check_username_exists(username):
-                messagebox.showerror("Error", "Username already exists!")
-                return
             self.register_user(username)
             
     def register_user(self, username):
@@ -205,81 +273,136 @@ class FaceAuthSystem:
                 messagebox.showerror("Error", "Could not open camera! Please check if it's connected and not in use by another application.")
                 return
                 
+            # Set camera properties for better performance
+            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_resolution[0])
+            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_resolution[1])
+            self.camera.set(cv2.CAP_PROP_FPS, self.camera_fps)
+            self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size for real-time processing
+                
         self.is_camera_active = True
-        self.status_label.config(text=f"Registration in progress... Capture {self.registration_count + 1}/{self.registration_required}")
+        self.camera_start_time = time.time()
+        self.countdown_active = True
         
         # Start camera feed
         self.update_camera_feed()
         
     def update_camera_feed(self):
-        """Update camera feed and handle face detection"""
+        """Update camera feed and handle face detection with improved performance"""
         if not self.is_camera_active:
             return
+            
+        # Calculate time since camera started
+        if self.camera_start_time is not None:
+            elapsed_time = time.time() - self.camera_start_time
+            remaining_time = max(0, self.recognition_delay - elapsed_time)
+            
+            if remaining_time > 0 and self.countdown_active:
+                self.countdown_label.config(text=f"Please wait... Recognition starts in {int(remaining_time + 1)} seconds")
+                can_recognize = False
+            else:
+                self.countdown_label.config(text="")
+                can_recognize = True
+                self.countdown_active = False
+        else:
+            can_recognize = True
             
         ret, frame = self.camera.read()
         if not ret:
             self.status_label.config(text="Failed to capture frame. Please check camera connection.")
+            self.root.after(10, self.update_camera_feed)
             return
             
         # Check lighting conditions
         lighting_ok, lighting_message = self.check_lighting_conditions(frame)
         if not lighting_ok:
             self.lighting_label.config(text=lighting_message)
-            self.status_label.config(text="Waiting for better lighting conditions...")
-            # Schedule next update
-            self.root.after(10, self.update_camera_feed)
-            return
+            if can_recognize:
+                self.status_label.config(text="Waiting for better lighting conditions...")
         else:
             self.lighting_label.config(text="")
             
         # Convert frame to RGB for face_recognition
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Detect faces
-        face_locations = face_recognition.face_locations(rgb_frame)
-        
-        if len(face_locations) == 0:
-            self.status_label.config(text="No face detected. Please position your face in the camera view.")
-        elif len(face_locations) > 1:
-            self.status_label.config(text="Multiple faces detected. Please ensure only one face is visible.")
-        else:
-            # Draw rectangle around face
-            top, right, bottom, left = face_locations[0]
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+        # Process face detection with improved performance
+        self.frame_count += 1
+        if self.frame_count % self.frame_skip == 0 and lighting_ok:
+            # Detect faces with optimized settings
+            face_locations = face_recognition.face_locations(rgb_frame, model="hog", number_of_times_to_upsample=1)
             
-            # If in registration mode, capture face
-            if hasattr(self, 'current_username'):
-                if self.registration_count < self.registration_required:
-                    face_encoding = face_recognition.face_encodings(rgb_frame, [face_locations[0]])[0]
-                    self.registration_images.append(face_encoding)
-                    self.registration_count += 1
-                    
-                    if self.registration_count < self.registration_required:
-                        self.status_label.config(text=f"Registration in progress... Capture {self.registration_count + 1}/{self.registration_required}")
-                    else:
-                        self.complete_registration()
-            # If in login mode, verify face
-            elif hasattr(self, 'login_mode'):
-                face_encoding = face_recognition.face_encodings(rgb_frame, [face_locations[0]])[0]
-                self.verify_face(face_encoding)
+            if len(face_locations) == 0:
+                if can_recognize:
+                    self.status_label.config(text="No face detected. Please position your face in the camera view.")
+            elif len(face_locations) > 1:
+                if can_recognize:
+                    self.status_label.config(text="Multiple faces detected. Please ensure only one face is visible.")
+            else:
+                # Draw rectangle around face
+                top, right, bottom, left = face_locations[0]
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                
+                # Only process recognition after the delay
+                if can_recognize:
+                    # If in registration mode, capture face
+                    if hasattr(self, 'current_username'):
+                        if self.registration_count < self.registration_required:
+                            face_encodings = face_recognition.face_encodings(rgb_frame, [face_locations[0]])
+                            if face_encodings:
+                                face_encoding = face_encodings[0]
+                                self.registration_images.append(face_encoding)
+                                self.registration_count += 1
+                                
+                                if self.registration_count < self.registration_required:
+                                    self.status_label.config(text=f"Registration in progress... Capture {self.registration_count + 1}/{self.registration_required}")
+                                else:
+                                    self.complete_registration()
+                                    return
+                    # If in login mode, verify face
+                    elif hasattr(self, 'login_mode'):
+                        face_encodings = face_recognition.face_encodings(rgb_frame, [face_locations[0]])
+                        if face_encodings:
+                            face_encoding = face_encodings[0]
+                            self.verify_face(face_encoding)
+                            return
+                else:
+                    if hasattr(self, 'current_username'):
+                        self.status_label.config(text=f"Get ready for registration... {int(remaining_time + 1)} seconds remaining")
+                    elif hasattr(self, 'login_mode'):
+                        self.status_label.config(text=f"Get ready for login... {int(remaining_time + 1)} seconds remaining")
                         
-        # Convert frame to PhotoImage
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(frame)
+        # Convert frame to PhotoImage with better quality
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(frame_rgb)
+        # Resize image to fit the display area better
+        display_size = (640, 480)
+        image = image.resize(display_size, Image.Resampling.LANCZOS)
         photo = ImageTk.PhotoImage(image=image)
         
         # Update video frame
         self.video_frame.config(image=photo)
         self.video_frame.image = photo
         
-        # Schedule next update
-        self.root.after(10, self.update_camera_feed)
+        # Schedule next update with minimal delay for smoother video
+        self.root.after(1, self.update_camera_feed)
         
     def complete_registration(self):
         """Complete the registration process"""
+        # Stop camera and clear display first
+        self.stop_camera_and_clear_display()
+        
         if len(self.registration_images) == self.registration_required:
             # Calculate average face encoding
             avg_encoding = np.mean(self.registration_images, axis=0)
+
+            # Check if this face is already registered
+            is_duplicate, existing_username = self.check_face_already_registered(avg_encoding)
+            if is_duplicate:
+                messagebox.showerror("Error", f"This face is already registered with username: {existing_username}")
+                self.status_label.config(text="Registration failed - Face already exists")
+                # Cleanup
+                if hasattr(self, 'current_username'):
+                    delattr(self, 'current_username')
+                return
             
             # Verify the quality of the registration
             face_distances = []
@@ -312,10 +435,27 @@ class FaceAuthSystem:
                 messagebox.showerror("Error", f"Failed to save registration: {str(e)}")
                 
         # Cleanup
+        if hasattr(self, 'current_username'):
+            delattr(self, 'current_username')
+        
+    def stop_camera_and_clear_display(self):
+        """Stop camera and clear the video display"""
         self.is_camera_active = False
-        self.camera.release()
-        self.camera = None
-        delattr(self, 'current_username')
+        if self.camera is not None:
+            self.camera.release()
+            self.camera = None
+        
+        # Clear the video frame
+        self.video_frame.config(image="")
+        self.video_frame.image = None
+        
+        # Clear status labels
+        self.countdown_label.config(text="")
+        self.lighting_label.config(text="")
+        
+        # Reset timing variables
+        self.camera_start_time = None
+        self.countdown_active = False
         
     def start_login(self):
         """Start the login process"""
@@ -337,8 +477,15 @@ class FaceAuthSystem:
                 messagebox.showerror("Error", "Could not open camera! Please check if it's connected and not in use by another application.")
                 return
                 
+            # Set camera properties for better performance
+            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_resolution[0])
+            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_resolution[1])
+            self.camera.set(cv2.CAP_PROP_FPS, self.camera_fps)
+            self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
         self.is_camera_active = True
-        self.status_label.config(text="Login in progress... Please look at the camera")
+        self.camera_start_time = time.time()
+        self.countdown_active = True
         
         # Start camera feed
         self.update_camera_feed()
@@ -348,6 +495,9 @@ class FaceAuthSystem:
         if not hasattr(self, 'login_mode'):
             return
             
+        # Stop camera and clear display first
+        self.stop_camera_and_clear_display()
+        
         # Compare face with known faces
         face_distances = face_recognition.face_distance(
             self.known_face_encodings, 
@@ -362,17 +512,13 @@ class FaceAuthSystem:
         if best_match_distance <= self.recognition_threshold:
             username = self.known_face_names[best_match_index]
             
-            # Show success message
-            messagebox.showinfo("Success", f"Welcome back, {username}!")
-            self.status_label.config(text=f"Logged in as {username}")
+            self.status_label.config(text=f"Face recognized as {username}")
             
-            # Cleanup
-            self.is_camera_active = False
-            self.camera.release()
-            self.camera = None
-            delattr(self, 'login_mode')
+            # Cleanup login mode
+            if hasattr(self, 'login_mode'):
+                delattr(self, 'login_mode')
             
-            # Open dashboard
+            # Open dashboard (which will handle the redirect)
             DashboardWindow(self.root, username)
             
         else:
@@ -382,12 +528,12 @@ class FaceAuthSystem:
                 self.status_label.config(text="Login failed")
                 
                 # Cleanup
-                self.is_camera_active = False
-                self.camera.release()
-                self.camera = None
-                delattr(self, 'login_mode')
+                if hasattr(self, 'login_mode'):
+                    delattr(self, 'login_mode')
             else:
                 self.status_label.config(text=f"Face not recognized. Attempt {self.login_attempts}/{self.max_login_attempts}")
+                # Restart login process for another attempt
+                self.start_login()
         
     def check_username_exists(self, username):
         """Check if username already exists in database"""
@@ -410,4 +556,4 @@ if __name__ == "__main__":
     try:
         app.run()
     finally:
-        app.cleanup() 
+        app.cleanup()
