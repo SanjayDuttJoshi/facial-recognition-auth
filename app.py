@@ -9,6 +9,30 @@ from PIL import Image, ImageTk
 import threading
 import time
 import webbrowser
+from flask import Flask, redirect, url_for
+import subprocess
+import sys
+
+# Create Flask app
+flask_app = Flask(__name__)
+
+@flask_app.route('/logout')
+def logout():
+    # Restart the Python application
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
+    return "Logging out..."
+
+def run_flask():
+    flask_app.run(port=5000)
+
+# Start Flask server in a separate thread
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
+
+@flask_app.route('/')
+def index():
+    return "Face Authentication System"
 
 class DashboardWindow:
     def __init__(self, parent, username):
@@ -16,15 +40,26 @@ class DashboardWindow:
         self.window.title(f"Welcome {username}")
         self.window.geometry("400x300")
         
-        # Center the window
-        self.window.transient(parent)
-        self.window.grab_set()
+        # Center the window on screen
+        self.center_window()
         
         # Create dashboard content
         self.create_widgets(username)
         
         # Auto redirect after 3 seconds
         self.redirect_timer = self.window.after(3000, self.redirect_to_localhost)
+        
+    def center_window(self):
+        # Get screen width and height
+        screen_width = self.window.winfo_screenwidth()
+        screen_height = self.window.winfo_screenheight()
+        
+        # Calculate position for center of the screen
+        x = (screen_width - 400) // 2
+        y = (screen_height - 300) // 2
+        
+        # Set the position of the window
+        self.window.geometry(f"400x300+{x}+{y}")
         
     def create_widgets(self, username):
         # Welcome message
@@ -38,7 +73,7 @@ class DashboardWindow:
         # Status message
         status_label = tk.Label(
             self.window,
-            text="Login Successful!\nRedirecting to localhost:3000...",
+            text="Login Successful!\nRedirecting to localhost:8080...",
             font=("Arial", 12),
             fg="green"
         )
@@ -57,16 +92,6 @@ class DashboardWindow:
         self.countdown = 3
         self.update_countdown()
         
-        # Manual redirect button (commented out as requested)
-        # redirect_btn = tk.Button(
-        #     self.window,
-        #     text="Go to localhost:3000",
-        #     command=self.redirect_to_localhost,
-        #     width=20,
-        #     height=2
-        # )
-        # redirect_btn.pack(pady=20)
-        
     def update_countdown(self):
         if self.countdown > 0:
             self.countdown_label.config(text=f"Redirecting in {self.countdown} seconds...")
@@ -75,13 +100,12 @@ class DashboardWindow:
         
     def redirect_to_localhost(self):
         try:
-            # Open localhost:3000 in default browser
-            webbrowser.open('http://localhost:3000')
-            messagebox.showinfo("Redirect", "Opening localhost:3000 in your browser...")
+            # Open localhost:8080 in default browser
+            webbrowser.open('http://localhost:8080')
+            # Instead of iconify, just withdraw the window
+            self.window.withdraw()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open browser: {str(e)}")
-        finally:
-            self.window.destroy()
 
 class FaceAuthSystem:
     def __init__(self):
@@ -606,6 +630,17 @@ class FaceAuthSystem:
             self.camera.release()
         if hasattr(self, 'conn'):
             self.conn.close()
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Set the environment variable for dlib model before importing face_recognition
+os.environ["DLIB_FACE_PREDICTOR_PATH"] = resource_path("face_recognition_models/models/shape_predictor_68_face_landmarks.dat")
 
 if __name__ == "__main__":
     app = FaceAuthSystem()

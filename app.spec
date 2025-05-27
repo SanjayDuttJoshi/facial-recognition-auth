@@ -13,6 +13,7 @@ a = Analysis(
         ('templates', 'templates'),
         ('static', 'static'),
         ('face_auth.db', '.'),
+        ('face_recognition_models/models/shape_predictor_68_face_landmarks.dat', 'face_recognition_models/models'),
     ],
     hiddenimports=[],
     hookspath=[],
