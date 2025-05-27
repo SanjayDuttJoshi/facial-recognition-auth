@@ -12,9 +12,37 @@ import webbrowser
 from flask import Flask, redirect, url_for
 import subprocess
 import sys
+import dlib
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # Create Flask app
 flask_app = Flask(__name__)
+
+# Always resolve the model path using resource_path
+PREDICTOR_MODEL_REL = "face_recognition_models/models/shape_predictor_68_face_landmarks.dat"
+predictor_path = resource_path(PREDICTOR_MODEL_REL)
+if not os.path.exists(predictor_path):
+    # Try relative to script as fallback
+    predictor_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), PREDICTOR_MODEL_REL)
+    if not os.path.exists(predictor_path):
+        tk.Tk().withdraw()  # Hide root window
+        messagebox.showerror("Model Not Found", f"Could not find face predictor model at:\n{resource_path(PREDICTOR_MODEL_REL)}\nor\n{predictor_path}\n\nPlease ensure the model file is bundled correctly.")
+        sys.exit(1)
+
+# Load the dlib predictor ONCE, globally, for all uses
+try:
+    dlib_predictor = dlib.shape_predictor(predictor_path)
+except Exception as e:
+    tk.Tk().withdraw()
+    messagebox.showerror("Model Load Error", f"Failed to load dlib model:\n{e}\nPath tried: {predictor_path}")
+    sys.exit(1)
 
 @flask_app.route('/logout')
 def logout():
@@ -630,17 +658,6 @@ class FaceAuthSystem:
             self.camera.release()
         if hasattr(self, 'conn'):
             self.conn.close()
-
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-# Set the environment variable for dlib model before importing face_recognition
-os.environ["DLIB_FACE_PREDICTOR_PATH"] = resource_path("face_recognition_models/models/shape_predictor_68_face_landmarks.dat")
 
 if __name__ == "__main__":
     app = FaceAuthSystem()

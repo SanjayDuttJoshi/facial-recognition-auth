@@ -28,10 +28,10 @@ jobs:
         shell: cmd # 👈 This is MUST for Windows-style "if exist"
 
       - name: Build executable with PyInstaller
-        run: pyinstaller --onefile app.py
+        run: pyinstaller app.spec
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-exe
-          path: dist/app.exe
+          path: dist/FaceRecognitionApp.exe
